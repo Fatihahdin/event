@@ -255,10 +255,10 @@ class LoginPageState extends State<LoginPage> {
       ));
     } catch (e) {
       print("Unknown error: $e");
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text(
           "An unknown error occurred",
-          style: const TextStyle(fontSize: 18.0),
+          style: TextStyle(fontSize: 18.0),
         ),
       ));
     }
