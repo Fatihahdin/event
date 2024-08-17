@@ -1,0 +1,7 @@
+{
+    "java.compile.nullAnalysis.mode": "disabled",
+    "cSpell.enableFiletypes": [
+        "!gradle",
+        "powershell"
+    ]
+}
