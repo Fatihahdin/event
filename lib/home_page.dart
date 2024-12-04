@@ -1,262 +1,289 @@
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:event/all_events_page.dart';
-import 'package:event/concert_page.dart';
-import 'package:event/movie_page.dart';
-import 'package:event/sport_page.dart';
+import 'package:event/current_month_events_widget.dart';
+import 'package:event/custom_app_bar.dart';
+import 'package:event/custom_bottom_navigation_bar.dart';
+import 'package:event/past_events.dart';
+import 'package:event/upcoming_events_widget.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
-import 'eventspage.dart';
+import 'concert_page.dart';
+import 'drawer_widget.dart';
+import 'eventsdetailspage.dart';
+import 'movie_page.dart';
+import 'sport_page.dart';
 
-class Home extends StatelessWidget {
-  const Home({super.key});
+class Home extends StatefulWidget {
+  const Home({Key? key}) : super(key: key);
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: Builder(
-          builder: (BuildContext context) {
-            return IconButton(
-              icon: const Icon(Icons.menu, color: Colors.black),
-              onPressed: () {
-                Scaffold.of(context).openDrawer(); // Use the new context
-              },
-            );
-          },
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications, color: Colors.black),
-            onPressed: () {
-              // Add notification functionality here
-            },
-          ),
-        ],
-        title: const TextField(
-          decoration: InputDecoration(
-            hintText: 'Search',
-            prefixIcon: Icon(Icons.search, color: Colors.grey),
-            border: InputBorder.none,
-          ),
-        ),
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: SingleChildScrollView(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    _buildCategoryTabs(context),
-                    const SizedBox(height: 16),
-                    _buildCarouselSlider(context),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'EVENTS',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildEventsFromFirebase(context),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'UPCOMING',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildUpcomingEvents(),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-      bottomNavigationBar: _buildBottomNavigationBar(context), // Pass the context here
-      drawer: _buildDrawer(context), // Add the Drawer widget here
-    );
+  HomeState createState() => HomeState();
+}
+
+class HomeState extends State<Home> {
+  final Set<String> shownNotifications = {};
+
+  @override
+  void initState() {
+    super.initState();
+    setupFCM();
+    requestNotificationPermissions();
+    getTokenAndSave();
   }
 
-  Future<String> getUsername() async {
-    User? user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      try {
-        DocumentSnapshot userDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .get();
+  Future<void> requestNotificationPermissions() async {
+    FirebaseMessaging messaging = FirebaseMessaging.instance;
+    NotificationSettings settings = await messaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
 
-        // Safely cast the data to Map<String, dynamic>
-        Map<String, dynamic>? userData = userDoc.data() as Map<String, dynamic>?;
-
-        if (userData != null) {
-          return userData['username'] ?? 'User';
-        } else {
-          return 'User'; // Default username if document does not exist
-        }
-      } catch (e) {
-        print('Error fetching username: $e');
-        return 'User'; // Default username in case of error
-      }
+    if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+      print('User granted permission');
+    } else if (settings.authorizationStatus == AuthorizationStatus.provisional) {
+      print('User granted provisional permission');
     } else {
-      return 'User'; // Default username if no user is logged in
+      print('User declined or has not accepted permission');
     }
   }
 
-  Widget _buildDrawer(BuildContext context) {
-    return Drawer(
-      child: FutureBuilder<String>(
-        future: getUsername(),
-        builder: (context, snapshot) {
-          String username = 'User'; // Default username
-          if (snapshot.connectionState == ConnectionState.done) {
-            if (snapshot.hasData) {
-              username = snapshot.data!;
-            } else if (snapshot.hasError) {
-              print('Error: ${snapshot.error}');
-            }
-          }
-          return ListView(
-            padding: EdgeInsets.zero,
-            children: <Widget>[
-              DrawerHeader(
-                decoration: BoxDecoration(
-                  color: Colors.blue,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    CircleAvatar(
-                      radius: 30,
-                      backgroundColor: Colors.white,
-                      child: Icon(Icons.person, size: 40, color: Colors.blue),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Hi, $username',
-                      style: TextStyle(color: Colors.white, fontSize: 18),
-                    ),
-                  ],
-                ),
-              ),
-              ListTile(
-                leading: Icon(Icons.home),
-                title: Text('Home'),
-                onTap: () {
-                  Navigator.pushReplacementNamed(context, '/home');
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.event),
-                title: Text('Events'),
-                onTap: () {
-                  Navigator.pushReplacementNamed(context, '/events');
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.confirmation_number),
-                title: Text('My Tickets'),
-                onTap: () {
-                  Navigator.pushReplacementNamed(context, '/my-tickets');
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.info),
-                title: Text('About Us'),
-                onTap: () {
-                  Navigator.pushReplacementNamed(context, '/about-us');
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.logout),
-                title: Text('Sign Out'),
-                onTap: () async {
-                  await FirebaseAuth.instance.signOut();
-                  Navigator.pushReplacementNamed(context, '/login'); // Adjust to your login route
-                },
-              ),
-            ],
+  void setupFCM() {
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      if (!mounted) return;
+
+      if (message.notification != null) {
+        String notificationId = '${message.notification!.title}:${message.notification!.body}';
+        if (!shownNotifications.contains(notificationId)) {
+          shownNotifications.add(notificationId);
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${message.notification!.title}: ${message.notification!.body}'),
+            ),
           );
-        },
-      ),
-    );
+          saveNotificationToFirestore(message, notificationId);
+        } else {
+          print('Duplicate notification ignored: $notificationId');
+        }
+      }
+    });
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      if (!mounted) return;
+      if (message.data['eventId'] != null) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => EventDetailsPage(
+              event: message.data,
+              eventId: message.data['eventId'],
+            ),
+          ),
+        );
+      }
+    });
   }
 
-  Widget _buildCategoryTabs(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.start,
-      children: <Widget>[
-        Padding(
-          padding: const EdgeInsets.only(right: 4.0),
-          child: GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => ConcertPage()),
-              );
-            },
-            child: Chip(
-              label: Text(
-                'Concert',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.normal),
-              ),
-              backgroundColor: Color(0xFFF6F6F6),
-              shape: StadiumBorder(
-                side: BorderSide(color: Colors.black, width: 0),
-              ),
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.only(right: 4.0),
-          child: GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => SportPage()),
-              );
-            },
-            child: Chip(
-              label: Text(
-                'Sport',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.normal),
-              ),
-              backgroundColor: Color(0xFFF6F6F6),
-              shape: StadiumBorder(
-                side: BorderSide(color: Colors.black, width: 0),
-              ),
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.only(right: 4.0),
-          child: GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => MoviePage()),
-              );
-            },
-            child: Chip(
-              label: Text(
-                'Movie',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.normal),
-              ),
-              backgroundColor: Color(0xFFF6F6F6),
-              shape: StadiumBorder(
-                side: BorderSide(color: Colors.black, width: 0),
+  /// Save notifications to Firestore
+  Future<void> saveNotificationToFirestore(RemoteMessage message, String notificationId) async {
+    User? user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .collection('notifications')
+            .doc(notificationId)
+            .set({
+          'title': message.notification?.title,
+          'message': message.notification?.body,
+          'timestamp': FieldValue.serverTimestamp(),
+          'eventId': message.data['eventId'],
+        }, SetOptions(merge: true));
+      } catch (e) {
+        print('Error saving notification to Firestore: $e');
+      }
+    }
+  }
+
+  /// Get FCM token and save it to Firestore
+  Future<void> getTokenAndSave() async {
+    try {
+      String? token = await FirebaseMessaging.instance.getToken();
+      if (token != null) {
+        User? user = FirebaseAuth.instance.currentUser;
+        if (user != null) {
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .set({'fcmToken': token}, SetOptions(merge: true));
+        }
+      }
+    } catch (e) {
+      print('Error while getting FCM token: $e');
+    }
+  }
+
+@override
+Widget build(BuildContext context) {
+  return Scaffold(
+    appBar: CustomAppBar(), // Gunakan Custom App Bar
+    body: Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildCarouselSlider(context),
+                  const SizedBox(height: 16),
+                  _buildCategoryTabs(context),
+                  const SizedBox(height: 16),
+                  const CurrentMonthEventsWidget(),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'UPCOMING',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFFe2a800),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const UpcomingEventsWidget(),
+                  const SizedBox(height: 16),
+                  PastEventsWidget(),
+                ],
               ),
             ),
           ),
         ),
       ],
-    );
-  }
+    ),
+    bottomNavigationBar: const CustomBottomNavigationBar(currentIndex: 0),
+    drawer: const CustomDrawer(),
+  );
+}
+
+Widget _buildCategoryTabs(BuildContext context) {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: <Widget>[
+      const Text(
+        'Categories',
+        style: TextStyle(
+          fontSize: 20,
+          fontWeight: FontWeight.bold,
+          color: Color.fromARGB(255, 0, 0, 0), // Gold color
+        ),
+      ),
+      const SizedBox(height: 16),
+      // Using GridView for responsive layout
+      GridView.count(
+        crossAxisCount: 3, // 3 columns for categories
+        childAspectRatio: 1, // Square aspect ratio
+        shrinkWrap: true, // Makes grid scrollable
+        physics: const NeverScrollableScrollPhysics(), // Disable grid scroll
+        crossAxisSpacing: 20,
+        mainAxisSpacing: 16,
+        children: <Widget>[
+          _buildCategoryIcon(
+            context,
+            Icons.music_note,
+            'Concert',
+            () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const ConcertPage()),
+              );
+            },
+          ),
+          _buildCategoryIcon(
+            context,
+            FontAwesomeIcons.soccerBall, // Football icon from Font Awesome
+            'Sport',
+            () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const SportPage()),
+              );
+            },
+          ),
+          _buildCategoryIcon(
+            context,
+            Icons.movie,
+            'Movie',
+            () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const MoviePage()),
+              );
+            },
+          ),
+        ],
+      ),
+    ],
+  );
+}
+
+Widget _buildCategoryIcon(
+    BuildContext context, IconData icon, String label, VoidCallback onTap) {
+  return GestureDetector(
+    onTap: onTap,
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Color(0xFF6F4F37), // Dark brown
+                Color(0xFFF5F5DC), // Light beige
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: Color(0xFFD9C0A2), // Lighter beige color for border
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 8,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Icon(
+            icon,
+            size: 40,
+            color: Colors.white, // White icons for contrast
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF6F4F37), // Dark brown for text color
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+
+
 
   Future<List<String>> fetchAds() async {
     try {
@@ -271,251 +298,58 @@ class Home extends StatelessWidget {
     }
   }
 
-  Future<List<String>> fetchEvents() async {
-    try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('events')
-          .get();
-
-      return snapshot.docs.map((doc) => doc['imageUrl'] as String).toList();
-    } catch (e) {
-      print('Error fetching events: $e');
-      return [];
-    }
-  }
-
-  Widget _buildCarouselSlider(BuildContext context) {
-    return FutureBuilder<List<String>>(
-      future: fetchAds(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Center(child: CircularProgressIndicator());
-        }
-        if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
-        }
-        if (!snapshot.hasData || snapshot.data!.isEmpty) {
-          return Center(child: Text('No ads available'));
-        }
-
-        final ads = snapshot.data!;
-        final screenWidth = MediaQuery.of(context).size.width;
-
-        return CarouselSlider(
-          options: CarouselOptions(
-            height: screenWidth * 0.5625, // Set height based on the desired aspect ratio (16:9 here)
-            autoPlay: true, // Auto-play is enabled
-            enlargeCenterPage: true,
-            viewportFraction: 1.0, // Ensures the slider fills the width of the screen
-          ),
-          items: ads.map((adUrl) {
-            return Builder(
-              builder: (BuildContext context) {
-                return Container(
-                  width: screenWidth, // Set the container width
-
-                  margin: const EdgeInsets.symmetric(horizontal: 0.0),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10),
-                    image: DecorationImage(
-                      image: NetworkImage(adUrl),
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                );
-              },
-            );
-          }).toList(),
-        );
-      },
-    );
-  }
-
-  Widget _buildEventsFromFirebase(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text(
-              'EVENTS',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const AllEventsPage()),
-                );
-              },
-              child: const Text('View All'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        FutureBuilder<List<String>>(
-          future: fetchEvents(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return Center(child: CircularProgressIndicator());
-            }
-            if (snapshot.hasError) {
-              return Center(child: Text('Error: ${snapshot.error}'));
-            }
-            if (!snapshot.hasData || snapshot.data!.isEmpty) {
-              return Center(child: Text('No events available'));
-            }
-
-            final events = snapshot.data!;
-            final cardWidth = MediaQuery.of(context).size.width * 0.7; // Adjust width based on desired size
-            final cardHeight = cardWidth * 0.6; // Adjust height based on aspect ratio
-
-            return Container(
-              height: cardHeight,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                itemCount: events.length,
-                itemBuilder: (context, index) {
-                  final eventUrl = events[index];
-                  return Container(
-                    width: cardWidth,
-                    margin: const EdgeInsets.symmetric(horizontal: 8.0),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(15),
-                      image: DecorationImage(
-                        image: NetworkImage(eventUrl),
-                        fit: BoxFit.cover, // Ensures the image is centered and covers the card
-                      ),
-                    ),
-                  );
-                },
-              ),
-            );
-          },
-        ),
-      ],
-    );
-  }
-
-
-  Widget _buildUpcomingEvents() {
-    return Column(
-      children: [
-        _buildUpcomingEventCard('Fun Run', 'Sport', 'RM50', '15', 'THU'),
-        const SizedBox(height: 16),
-        _buildUpcomingEventCard('Exhuma', 'Movie', 'RM2', '16', 'FRI'),
-      ],
-    );
-  }
-
-  Widget _buildUpcomingEventCard(
-      String title, String category, String price, String day, String weekday) {
-    return Row(
-      children: [
-        // Date and weekday section
-        Container(
-          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 12.0),
+ Widget _buildCarouselSlider(BuildContext context) {
+  return FutureBuilder<List<String>>(
+    future: fetchAds(),
+    builder: (context, snapshot) {
+      if (snapshot.connectionState == ConnectionState.waiting) {
+        return const Center(child: CircularProgressIndicator());
+      } else if (snapshot.hasError) {
+        return const Center(child: Text('Error loading ads'));
+      } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+        return const Center(child: Text('No ads available'));
+      } else {
+        return Container(
+          margin: const EdgeInsets.symmetric(vertical: 16.0),
           decoration: BoxDecoration(
-            color: const Color(0xFFCAA55D), // Adjust the color as needed
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Column(
-            children: [
-              Text(
-                day,
-                style: const TextStyle(
-                  fontSize: 20,
-                  color: Colors.white, // Text color for day
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              Text(
-                weekday.toUpperCase(),
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: Colors.white, // Text color for weekday
-                ),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 10,
+                offset: Offset(0, 6), // Soft shadow
               ),
             ],
           ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade200,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+          child: CarouselSlider.builder(
+            itemCount: snapshot.data!.length,
+            itemBuilder: (context, index, realIndex) {
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(20), // Rounded corners
+                child: Image.network(
+                  snapshot.data![index],
+                  fit: BoxFit.cover,
+                  width: double.infinity,
                 ),
-                const SizedBox(height: 8),
-                Text(category),
-                const SizedBox(height: 8),
-                Text(price),
-              ],
+              );
+            },
+            options: CarouselOptions(
+              height: 200,
+              autoPlay: true,
+              autoPlayInterval: const Duration(seconds: 3),
+              enlargeCenterPage: true,
+              enableInfiniteScroll: true,
+              viewportFraction: 1.0,
+              pageSnapping: true,
+              onPageChanged: (index, reason) {
+                // You can add custom logic for page change here if necessary
+              },
             ),
           ),
-        ),
-      ],
-    );
-  }
-
-BottomNavigationBar _buildBottomNavigationBar(BuildContext context) {
-  return BottomNavigationBar(
-    items: const [
-      BottomNavigationBarItem(
-        icon: Icon(Icons.home),
-        label: 'Home',
-      ),
-      BottomNavigationBarItem(
-        icon: Icon(Icons.event),
-        label: 'Events',
-      ),
-      BottomNavigationBarItem(
-        icon: Icon(Icons.confirmation_number),
-        label: 'Tickets',
-      ),
-      BottomNavigationBarItem(
-        icon: Icon(Icons.person),
-        label: 'Profile',
-      ),
-    ],
-    backgroundColor: Colors.grey[200], // Background color of the BottomNavigationBar
-    selectedItemColor: const Color.fromARGB(255, 193, 156, 63), // Color for the selected item
-    unselectedItemColor: Colors.black54, // Color for unselected items
-    showSelectedLabels: true, // Show labels for selected items
-    showUnselectedLabels: true, // Show labels for unselected items
-    type: BottomNavigationBarType.fixed, // Ensures that the items have equal spacing
-    onTap: (int index) {
-      switch (index) {
-        case 0:
-          Navigator.pushReplacementNamed(context, '/home');
-          break;
-        case 1:
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => EventsPage()),
-          );
-          break;
-        case 2:
-          Navigator.pushReplacementNamed(context, '/my-tickets');
-          break;
-        case 3:
-          Navigator.pushReplacementNamed(context, '/profile');
-          break;
+        );
       }
     },
   );
 }
-
 }
+
